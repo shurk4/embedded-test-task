@@ -1,5 +1,6 @@
 #include <iostream>
 #include <map>
+#include <set>
 #include <cstdint>
 #include <string>
 #include <cstring>
@@ -24,8 +25,6 @@ constexpr uint8_t pinBlue = 6;
 
 // Эмуляция состояния пинов
 std::map<uint8_t, bool> pinStates;
-// Эмуляция значений пинов
-std::map<uint8_t, uint8_t> pinValues;
 struct mosquitto *mosq = nullptr;
 bool shouldRestart = false;
 bool isConnected = false;
@@ -111,7 +110,7 @@ void sendMQTTPinState(uint8_t pin, uint8_t value)
         json message;
         message["pin"] = pin;
 
-        if((bool)pinValues.count(pin)) {
+        if(pin == pinRed || pin == pinGreen || pin == pinBlue) {
             message["value"] = value;
         }
         else {
@@ -157,14 +156,17 @@ void digitalWrite(uint8_t pin, bool value) {
 
 // Функция для записи шим на пин
 void analogWrite(uint8_t pin, uint8_t value) {
-    std::cout << "Writing analog value to pin " << (int)pin << ": " << (int)value << std::endl;\
-        if((bool)pinStates.count(pin) && (bool)pinStates[pin]) { // Проверка на инициализацию пина и на режим работы OUTPUT
-        pinValues[pin] = value;
-        sendMQTTPinState(pin, value);
+    std::cout << "Writing analog value to pin " << (int)pin << ": " << (int)value << std::endl;
+    if(value > 0) {
+        pinStates[pin] = true;
     }
+    else {
+        pinStates[pin] = false;
+    }
+    sendMQTTPinState(pin, value);
 }
 
-// Проверка команды set_rgb <-----------------------------------------------------------------------------------------------------
+// Проверка команды set_rgb
 bool isCommandRGBValid(std::string *payload) {
     std::cout << "validate RGB command" << payload << std::endl;
     json data = json::parse(*payload);
@@ -204,6 +206,14 @@ bool isCommandRGBValid(std::string *payload) {
     return true;
 }
 
+// Установка значений RGB
+void setRGB(uint8_t red, uint8_t green, uint8_t blue) {
+    std::cout << "Setting RGB values" << std::endl;
+    analogWrite(pinRed, red);
+    analogWrite(pinGreen, green);
+    analogWrite(pinBlue, blue);
+}
+
 // Callback для получения сообщений MQTT
 void message_callback(struct mosquitto *mosq, void *obj, const struct mosquitto_message *message) {
     if (!message->payload) {
@@ -229,15 +239,11 @@ void message_callback(struct mosquitto *mosq, void *obj, const struct mosquitto_
                     digitalWrite(2, !currentState); // Инвертируем текущее состояние
                     shouldRestart = true;
                 }
-                else if (command == "set_rgb") { // <--------------------------------------------------------------------------------
+                else if (command == "set_rgb") { //
                     std::cout << "Recived set_rgb command" << std::endl;
                     if(isCommandRGBValid(&payload))
                     {
-                        std::cout << "------------- SET RGB!" <<std::endl;
-                        // Изменяем состояние пина 2 перед перезапуском
-                        bool currentState = digitalRead(2);
-                        digitalWrite(2, !currentState); // Инвертируем текущее состояние
-                        std::cout << "------------- SET RGB!" << digitalRead(2) <<std::endl;
+                        setRGB(data["red"], data["green"], data["blue"]);
                     }
                     else
                     {
